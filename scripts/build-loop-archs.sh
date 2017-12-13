@@ -37,6 +37,12 @@ do
   elif [ "${ARCH}" == "tv_arm64" ]; then
     ARCH="arm64"
     PLATFORM="AppleTVOS"
+  elif [ "${ARCH}" == "mac_x86_64" ]; then
+    ARCH="x86_64"
+    PLATFORM="MacOSX"
+  elif [ "${ARCH}" == "mac_i386" ]; then
+    ARCH="i386"
+    PLATFORM="MacOSX"
   else
     PLATFORM="iPhoneOS"
   fi
@@ -72,27 +78,39 @@ do
     LOCAL_CONFIG_OPTIONS="${LOCAL_CONFIG_OPTIONS} -DHAVE_FORK=0 -mtvos-version-min=${TVOS_MIN_SDK_VERSION}"
     echo "  Patching Configure..."
     LC_ALL=C sed -i -- 's/D\_REENTRANT\:iOS/D\_REENTRANT\:tvOS/' "./Configure"
-  else
+  elif [[ "${PLATFORM}" == iPhone* ]]; then
     LOCAL_CONFIG_OPTIONS="${LOCAL_CONFIG_OPTIONS} -miphoneos-version-min=${IOS_MIN_SDK_VERSION}"
+  else
+    LOCAL_CONFIG_OPTIONS="${LOCAL_CONFIG_OPTIONS} -mmacosx-version-min=${MACOS_MIN_SDK_VERSION}"
   fi
 
   # Add --openssldir option
   LOCAL_CONFIG_OPTIONS="--openssldir=${TARGETDIR} ${LOCAL_CONFIG_OPTIONS}"
 
   # Determine configure target
-  if [ "${ARCH}" == "x86_64" ]; then
-    LOCAL_CONFIG_OPTIONS="darwin64-x86_64-cc no-asm ${LOCAL_CONFIG_OPTIONS}"
+  if [[ "${PLATFORM}" != MacOS* ]]; then
+    if [ "${ARCH}" == "x86_64" ]; then
+      LOCAL_CONFIG_OPTIONS="darwin64-x86_64-cc no-asm ${LOCAL_CONFIG_OPTIONS}"
+    else
+      LOCAL_CONFIG_OPTIONS="iphoneos-cross ${LOCAL_CONFIG_OPTIONS}"
+    fi
   else
-    LOCAL_CONFIG_OPTIONS="iphoneos-cross ${LOCAL_CONFIG_OPTIONS}"
+    if [ "${ARCH}" == "x86_64" ]; then
+      LOCAL_CONFIG_OPTIONS="darwin64-x86_64-cc no-asm ${LOCAL_CONFIG_OPTIONS}"
+    else
+      LOCAL_CONFIG_OPTIONS="darwin-i386-cc ${LOCAL_CONFIG_OPTIONS}"
+    fi
   fi
 
   # Run Configure
   run_configure
 
   # Only required for Darwin64 builds (-isysroot is automatically added by iphoneos-cross target)
-  if [ "${ARCH}" == "x86_64" ]; then
-    echo "  Patching Makefile..."
-    sed -ie "s!^CFLAG=!CFLAG=-isysroot ${CROSS_TOP}/SDKs/${CROSS_SDK} !" "Makefile"
+  if [[ "${PLATFORM}" != MacOS* ]]; then
+    if [ "${ARCH}" == "x86_64" ]; then
+      echo "  Patching Makefile..."
+      sed -ie "s!^CFLAG=!CFLAG=-isysroot ${CROSS_TOP}/SDKs/${CROSS_SDK} !" "Makefile"
+    fi
   fi
 
   # Run make depend if relevant

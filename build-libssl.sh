@@ -28,12 +28,13 @@ set -u
 DEFAULTVERSION="1.0.2l"
 
 # Default (=full) set of architectures (OpenSSL <= 1.0.2) or targets (OpenSSL >= 1.1.0) to build
-DEFAULTARCHS="x86_64 i386 arm64 armv7s armv7 tv_x86_64 tv_arm64"
+DEFAULTARCHS="x86_64 i386 arm64 armv7s armv7 tv_x86_64 tv_arm64 mac_x86_64 mac_i386"
 DEFAULTTARGETS="ios-sim-cross-x86_64 ios-sim-cross-i386 ios64-cross-arm64 ios-cross-armv7s ios-cross-armv7 tvos-sim-cross-x86_64 tvos64-cross-arm64"
 
 # Minimum iOS/tvOS SDK version to build for
 IOS_MIN_SDK_VERSION="7.0"
 TVOS_MIN_SDK_VERSION="9.0"
+MACOS_MIN_SDK_VERSION="10.9"
 
 # Init optional env variables (use available variable or default to empty string)
 CURL_OPTIONS="${CURL_OPTIONS:-}"
@@ -48,8 +49,9 @@ echo_help()
   echo "     --ec-nistp-64-gcc-128         Enable configure option enable-ec_nistp_64_gcc_128 for 64 bit builds"
   echo " -h, --help                        Print help (this message)"
   echo "     --ios-sdk=SDKVERSION          Override iOS SDK version"
-  echo "     --noparallel                  Disable running make with parallel jobs (make -j)"
   echo "     --tvos-sdk=SDKVERSION         Override tvOS SDK version"
+  echo "     --macos-sdk=SDKVERSION        Override tvOS SDK version"
+  echo "     --noparallel                  Disable running make with parallel jobs (make -j)"
   echo "     --disable-bitcode             Disable embedding Bitcode"
   echo " -v, --verbose                     Enable verbose logging"
   echo "     --verbose-on-error            Dump last 500 lines from log file if an error occurs (for Travis builds)"
@@ -168,10 +170,14 @@ finish_build_loop()
     LIBSSL_TVOS+=("${TARGETDIR}/lib/libssl.a")
     LIBCRYPTO_TVOS+=("${TARGETDIR}/lib/libcrypto.a")
     OPENSSLCONF_SUFFIX="tvos_${ARCH}"
-  else
+  elif [[ "${PLATFORM}" == iPhone* ]]; then
     LIBSSL_IOS+=("${TARGETDIR}/lib/libssl.a")
     LIBCRYPTO_IOS+=("${TARGETDIR}/lib/libcrypto.a")
     OPENSSLCONF_SUFFIX="ios_${ARCH}"
+  else
+    LIBSSL_MACOS+=("${TARGETDIR}/lib/libssl.a")
+    LIBCRYPTO_MACOS+=("${TARGETDIR}/lib/libcrypto.a")
+    OPENSSLCONF_SUFFIX="macos_${ARCH}"
   fi
 
   # Copy opensslconf.h to bin directory and add to array
@@ -193,10 +199,11 @@ CONFIG_ENABLE_EC_NISTP_64_GCC_128=""
 CONFIG_DISABLE_BITCODE=""
 CONFIG_NO_DEPRECATED=""
 IOS_SDKVERSION=""
+TVOS_SDKVERSION=""
+MACOS_SDKVERSION=""
 LOG_VERBOSE=""
 PARALLEL=""
 TARGETS=""
-TVOS_SDKVERSION=""
 VERSION=""
 
 # Process command line arguments
@@ -226,6 +233,10 @@ case $i in
   -h|--help)
     echo_help
     exit
+    ;;
+  --macos-sdk=*)
+    MACOS_SDKVERSION="${i#*=}"
+    shift
     ;;
   --ios-sdk=*)
     IOS_SDKVERSION="${i#*=}"
@@ -333,6 +344,9 @@ fi
 if [ ! -n "${TVOS_SDKVERSION}" ]; then
   TVOS_SDKVERSION=$(xcrun -sdk appletvos --show-sdk-version)
 fi
+if [ ! -n "${MACOS_SDKVERSION}" ]; then
+  MACOS_SDKVERSION=$(xcrun -sdk macosx --show-sdk-version)
+fi
 
 # Determine number of cores for (parallel) build
 BUILD_THREADS=1
@@ -382,6 +396,7 @@ else
 fi
 echo "  iOS SDK: ${IOS_SDKVERSION}"
 echo "  tvOS SDK: ${TVOS_SDKVERSION}"
+echo "  macOS SDK: ${MACOS_SDKVERSION}"
 if [ "${CONFIG_DISABLE_BITCODE}" == "true" ]; then
   echo "  Bitcode embedding disabled"
 fi
@@ -462,6 +477,8 @@ LIBSSL_IOS=()
 LIBCRYPTO_IOS=()
 LIBSSL_TVOS=()
 LIBCRYPTO_TVOS=()
+LIBSSL_MACOS=()
+LIBCRYPTO_MACOS=()
 
 # Run relevant build loop (archs = 1.0 style, targets = 1.1 style)
 if [ "${BUILD_TYPE}" == "archs" ]; then
@@ -480,12 +497,21 @@ fi
 # Build tvOS library if selected for build
 if [ ${#LIBSSL_TVOS[@]} -gt 0 ]; then
   echo "Build library for tvOS..."
-  lipo -create ${LIBSSL_TVOS[@]} -output "${CURRENTPATH}/lib/libssl-tvOS.a"
-  lipo -create ${LIBCRYPTO_TVOS[@]} -output "${CURRENTPATH}/lib/libcrypto-tvOS.a"
+  lipo -create ${LIBSSL_TVOS[@]} -output "${CURRENTPATH}/lib/libssl.a"
+  lipo -create ${LIBCRYPTO_TVOS[@]} -output "${CURRENTPATH}/lib/libcrypto.a"
+fi
+
+# Build macOS library if selected for build
+if [ ${#LIBSSL_MACOS[@]} -gt 0 ]; then
+  echo "Build library for tvOS..."
+  lipo -create ${LIBSSL_MACOS[@]} -output "${CURRENTPATH}/lib/libssl.a"
+  lipo -create ${LIBCRYPTO_MACOS[@]} -output "${CURRENTPATH}/lib/libcrypto.a"
 fi
 
 # Copy include directory
-cp -R "${INCLUDE_DIR}" "${CURRENTPATH}/include/"
+echo "${INCLUDE_DIR}"
+mkdir -p "${CURRENTPATH}/include"
+cp -R "${INCLUDE_DIR}" "${CURRENTPATH}/include"
 
 # Only create intermediate file when building for multiple targets
 # For a single target, opensslconf.h is still present in $INCLUDE_DIR (and has just been copied to the target include dir)
@@ -494,7 +520,7 @@ if [ ${#OPENSSLCONF_ALL[@]} -gt 1 ]; then
   # Prepare intermediate header file
   # This overwrites opensslconf.h that was copied from $INCLUDE_DIR
   OPENSSLCONF_INTERMEDIATE="${CURRENTPATH}/include/openssl/opensslconf.h"
-  cp "${CURRENTPATH}/include/opensslconf-template.h" "${OPENSSLCONF_INTERMEDIATE}"
+  cp "${SCRIPTDIR}/include/opensslconf-template.h" "${OPENSSLCONF_INTERMEDIATE}"
 
   # Loop all header files
   LOOPCOUNT=0
@@ -525,6 +551,12 @@ if [ ${#OPENSSLCONF_ALL[@]} -gt 1 ]; then
       ;;
       *_tvos_arm64.h)
         DEFINE_CONDITION="TARGET_OS_TV && TARGET_OS_EMBEDDED && TARGET_CPU_ARM64"
+      ;;
+      *_macos_x86_64.h)
+        DEFINE_CONDITION="TARGET_OS_MAC && TARGET_CPU_X86_64"
+      ;;
+      *_macos_i386.h)
+        DEFINE_CONDITION="TARGET_OS_MAC && TARGET_CPU_X86"
       ;;
       *)
         # Don't run into unexpected cases by setting the default condition to false
