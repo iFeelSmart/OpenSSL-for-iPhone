@@ -25,16 +25,16 @@ set -u
 # SCRIPT DEFAULTS
 
 # Default version in case no version is specified
-DEFAULTVERSION="1.0.2l"
+DEFAULTVERSION="1.0.2n"
 
 # Default (=full) set of architectures (OpenSSL <= 1.0.2) or targets (OpenSSL >= 1.1.0) to build
 DEFAULTARCHS="x86_64 i386 arm64 armv7s armv7 tv_x86_64 tv_arm64 mac_x86_64 mac_i386"
 DEFAULTTARGETS="ios-sim-cross-x86_64 ios-sim-cross-i386 ios64-cross-arm64 ios-cross-armv7s ios-cross-armv7 tvos-sim-cross-x86_64 tvos64-cross-arm64"
 
 # Minimum iOS/tvOS SDK version to build for
-IOS_MIN_SDK_VERSION="7.0"
-TVOS_MIN_SDK_VERSION="9.0"
-MACOS_MIN_SDK_VERSION="10.9"
+IOS_MIN_SDK_VERSION=${IPHONE_DEPLOYMENT_TARGET:-"7.0"}
+TVOS_MIN_SDK_VERSION=${APPLETVOS_DEPLOYMENT_TARGET:-"9.0"}
+MACOS_MIN_SDK_VERSION=${MACOSX_DEPLOYMENT_TARGET:-"10.9"}
 
 # Init optional env variables (use available variable or default to empty string)
 CURL_OPTIONS="${CURL_OPTIONS:-}"
